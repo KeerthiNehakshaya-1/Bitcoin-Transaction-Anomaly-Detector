@@ -1,3 +1,4 @@
+import argparse
 try:
     import pandas as pd  # type: ignore
 except ImportError:  # pragma: no cover - handled at runtime when pandas is unavailable

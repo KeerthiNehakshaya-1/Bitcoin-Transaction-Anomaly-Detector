@@ -50,3 +50,20 @@ models/
 .DS_Store
 Thumbs.db
 data/geoip/*.mmdb
+data/raw/active_input.csv
+data/raw/active_input.json
+data/raw/active_input.xml
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Generated processing outputs
+data/processed/*
+!data/processed/.gitkeep
+
+# Runtime input copies
+data/raw/active_input.*
+
+# Local Geo-IP databases
+data/geoip/*.mmdb

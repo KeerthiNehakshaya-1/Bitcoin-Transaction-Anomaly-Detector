@@ -1,6 +1,65 @@
+import argparse
+import shutil
 import subprocess
 import sys
 from pathlib import Path
+def parse_arguments():
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Offline Bitcoin transaction "
+            "analysis pipeline"
+        )
+    )
+
+    parser.add_argument(
+        "--input",
+        required=True,
+        help=(
+            "Path to input CSV, JSON or XML file"
+        )
+    )
+
+    return parser.parse_args()
+
+def prepare_input(input_file):
+
+    input_path = Path(input_file).resolve()
+
+    if not input_path.exists():
+        raise FileNotFoundError(
+            f"Input file not found:\n{input_path}"
+        )
+
+    supported_formats = {
+        ".csv",
+        ".json",
+        ".xml"
+    }
+
+    extension = input_path.suffix.lower()
+
+    if extension not in supported_formats:
+        raise ValueError(
+            "Supported input formats are CSV, JSON and XML."
+        )
+
+    raw_dir = BASE_DIR / "data" / "raw"
+    raw_dir.mkdir(
+        parents=True,
+        exist_ok=True
+    )
+
+    destination = (
+        raw_dir / f"active_input{extension}"
+    )
+
+    shutil.copy2(
+        input_path,
+        destination
+    )
+
+    return destination
 
 
 # =========================================================
@@ -14,7 +73,7 @@ BASE_DIR = Path(__file__).resolve().parent
 # RUN A PYTHON SCRIPT
 # =========================================================
 
-def run_step(description, script):
+def run_step(description, script, extra_args=None):
 
     print("\n")
     print("=" * 70)
@@ -26,20 +85,19 @@ def run_step(description, script):
         str(BASE_DIR / script)
     ]
 
+    if extra_args:
+        command.extend(extra_args)
+
     result = subprocess.run(
         command,
         cwd=BASE_DIR
     )
 
     if result.returncode != 0:
-
         print(
             f"\n❌ STEP FAILED: {description}"
         )
-
-        sys.exit(
-            result.returncode
-        )
+        sys.exit(result.returncode)
 
     print(
         f"\n✅ STEP COMPLETED: {description}"
@@ -51,6 +109,15 @@ def run_step(description, script):
 # =========================================================
 
 if __name__ == "__main__":
+    args = parse_arguments()
+
+    active_input = prepare_input(
+        args.input
+    )
+
+    print(
+        f"\nActive input file: {active_input}"
+    )
 
     print("=" * 70)
     print("BITCOIN TRANSACTION ANALYTICS PIPELINE")
@@ -65,9 +132,13 @@ if __name__ == "__main__":
     # -----------------------------------------------------
 
     run_step(
-        "STEP 1 - DATA INGESTION",
-        "ingestion/loader.py"
-    )
+    "STEP 1 - DATA INGESTION",
+    "ingestion/loader.py",
+    [
+        "--input",
+        str(active_input)
+    ]
+)
 
     # -----------------------------------------------------
     # 2. Validation + Cleaning
@@ -131,16 +202,17 @@ if __name__ == "__main__":
         "STEP 8 - ENTITY-LEVEL DETECTION",
         "ml/entity_detection.py"
     )
-    #-----------------------------------------------------
+
+    # -----------------------------------------------------
     # 9. Entity clustering
     # -----------------------------------------------------
-    
+
     run_step(
         "STEP 9 - DBSCAN ENTITY CLUSTERING",
         "ml/clustering.py"
     )
 
-# -----------------------------------------------------
+    # -----------------------------------------------------
     # 10. Risk scoring
     # -----------------------------------------------------
 
