@@ -14,6 +14,7 @@ PROCESSED_DIR = BASE_DIR / "data" / "processed"
 # =========================================================
 # LOAD ALL REQUIRED DATA
 # =========================================================
+
 def load_data():
 
     files = {
@@ -57,6 +58,7 @@ def normalize_series(series):
     maximum = values.max()
 
     if maximum == minimum:
+
         return pd.Series(
             50.0,
             index=values.index
@@ -89,7 +91,7 @@ def create_transaction_risk(ml_df):
     )
 
     # -----------------------------------------------------
-    # Amount
+    # Transaction amount
     # -----------------------------------------------------
 
     df["amount_signal"] = normalize_series(
@@ -121,8 +123,6 @@ def create_transaction_risk(ml_df):
 
     if valid_gap.notna().any():
 
-        # Use reciprocal behavior so small gaps
-        # receive stronger values.
         temporal_values = 1 / (
             valid_gap + 1
         )
@@ -146,7 +146,9 @@ def create_transaction_risk(ml_df):
         + 0.15 * df["temporal_signal"]
     )
 
-    df["risk_score"] = df["risk_score"].clip(0, 100)
+    df["risk_score"] = df[
+        "risk_score"
+    ].clip(0, 100)
 
     return df
 
@@ -179,21 +181,29 @@ def calculate_wallet_network_features(
             row["src_ip"]
         )
 
+        # -------------------------------------------------
         # Input wallet
+        # -------------------------------------------------
+
         records.append({
             "wallet": input_wallet,
             "ip": src_ip,
             "counterparty": output_wallet
         })
 
+        # -------------------------------------------------
         # Output wallet
+        # -------------------------------------------------
+
         records.append({
             "wallet": output_wallet,
             "ip": src_ip,
             "counterparty": input_wallet
         })
 
-    network_df = pd.DataFrame(records)
+    network_df = pd.DataFrame(
+        records
+    )
 
     if network_df.empty:
 
@@ -307,7 +317,8 @@ def create_wallet_risk(
         on="wallet",
         how="left"
     )
-        # -----------------------------------------------------
+
+    # -----------------------------------------------------
     # DBSCAN cluster information
     # -----------------------------------------------------
 
@@ -326,7 +337,10 @@ def create_wallet_risk(
     )
 
     df["cluster_id"] = (
-        df["cluster_id"]
+        pd.to_numeric(
+            df["cluster_id"],
+            errors="coerce"
+        )
         .fillna(-1)
     )
 
@@ -361,6 +375,10 @@ def create_wallet_risk(
                 errors="coerce"
             ).fillna(0)
 
+        else:
+
+            df[column] = 0.0
+
     # -----------------------------------------------------
     # Component signals
     # -----------------------------------------------------
@@ -394,7 +412,8 @@ def create_wallet_risk(
     df["centrality_signal"] = normalize_series(
         df["degree_centrality"]
     )
-        # -----------------------------------------------------
+
+    # -----------------------------------------------------
     # DBSCAN cluster behavior signal
     # -----------------------------------------------------
 
@@ -409,7 +428,10 @@ def create_wallet_risk(
         base_behavior_score
     )
 
-    # Average behavioral score of each DBSCAN cluster
+    # -----------------------------------------------------
+    # Average behavior of each actual cluster
+    # -----------------------------------------------------
+
     cluster_behavior = (
         df[
             df["cluster_id"] != -1
@@ -420,14 +442,22 @@ def create_wallet_risk(
         .mean()
     )
 
-    # Assign the cluster's average behavior to each wallet
+    # -----------------------------------------------------
+    # Assign cluster average to wallets
+    # -----------------------------------------------------
+
     df["cluster_signal"] = (
         df["cluster_id"]
         .map(cluster_behavior)
     )
 
-    # DBSCAN noise (-1) does not belong to a cluster.
-    # Use its own behavioral score instead.
+    # -----------------------------------------------------
+    # DBSCAN noise
+    #
+    # Noise does not belong to a dense cluster.
+    # Use the wallet's own behavior as its signal.
+    # -----------------------------------------------------
+
     df["cluster_signal"] = (
         df["cluster_signal"]
         .fillna(
@@ -435,7 +465,7 @@ def create_wallet_risk(
         )
     )
 
-    # Normalize to 0-100
+    # Normalize cluster signal
     df["cluster_signal"] = normalize_series(
         df["cluster_signal"]
     )
@@ -453,7 +483,10 @@ def create_wallet_risk(
         + 0.05 * df["centrality_signal"]
         + 0.10 * df["cluster_signal"]
     )
-    df["risk_score"] = df["risk_score"].clip(0, 100)
+
+    df["risk_score"] = df[
+        "risk_score"
+    ].clip(0, 100)
 
     return df
 
@@ -462,11 +495,16 @@ def create_wallet_risk(
 # IP NETWORK FEATURES
 # =========================================================
 
-def calculate_ip_network_features(correlation_df):
+def calculate_ip_network_features(
+    correlation_df
+):
 
-    print("\nCalculating IP network statistics...")
+    print(
+        "\nCalculating IP network statistics..."
+    )
 
     if correlation_df.empty:
+
         return pd.DataFrame(
             columns=[
                 "src_ip",
@@ -479,11 +517,17 @@ def calculate_ip_network_features(correlation_df):
     for _, row in correlation_df.iterrows():
 
         records.append({
-            "src_ip": str(row["src_ip"]),
-            "destination": str(row["dst_ip"])
+            "src_ip": str(
+                row["src_ip"]
+            ),
+            "destination": str(
+                row["dst_ip"]
+            )
         })
 
-    network_df = pd.DataFrame(records)
+    network_df = pd.DataFrame(
+        records
+    )
 
     ip_network = (
         network_df
@@ -498,6 +542,7 @@ def calculate_ip_network_features(correlation_df):
     )
 
     return ip_network
+
 
 # =========================================================
 # IP RISK
@@ -518,8 +563,10 @@ def create_ip_risk(
     # Network statistics
     # -----------------------------------------------------
 
-    ip_network = calculate_ip_network_features(
-        correlation_df
+    ip_network = (
+        calculate_ip_network_features(
+            correlation_df
+        )
     )
 
     df = df.merge(
@@ -579,7 +626,7 @@ def create_ip_risk(
         on="src_ip",
         how="left"
     )
-    
+
     # -----------------------------------------------------
     # Fill missing values
     # -----------------------------------------------------
@@ -605,6 +652,10 @@ def create_ip_risk(
                 df[column],
                 errors="coerce"
             ).fillna(0)
+
+        else:
+
+            df[column] = 0.0
 
     # -----------------------------------------------------
     # Component signals
@@ -642,7 +693,9 @@ def create_ip_risk(
         + 0.10 * df["destination_signal"]
     )
 
-    df["risk_score"] = df["risk_score"].clip(0, 100)
+    df["risk_score"] = df[
+        "risk_score"
+    ].clip(0, 100)
 
     return df
 
@@ -671,12 +724,19 @@ def assign_risk_level(score):
 
 def calculate_confidence(score):
 
-    confidence = 0.50 + (
-        abs(score - 50) / 100
+    confidence = (
+        0.50
+        + (
+            abs(score - 50)
+            / 100
+        )
     )
 
     return round(
-        min(confidence, 0.99),
+        min(
+            confidence,
+            0.99
+        ),
         2
     )
 
@@ -694,6 +754,7 @@ def generate_wallet_explanation(row):
     # -----------------------------------------------------
 
     if row["ml_signal"] >= 70:
+
         reasons.append(
             "High ML anomaly score"
         )
@@ -703,6 +764,7 @@ def generate_wallet_explanation(row):
     # -----------------------------------------------------
 
     if row["activity_signal"] >= 70:
+
         reasons.append(
             "Unusually high transaction activity"
         )
@@ -712,6 +774,7 @@ def generate_wallet_explanation(row):
     # -----------------------------------------------------
 
     if row["network_signal"] >= 70:
+
         reasons.append(
             "Connected to many IP addresses"
         )
@@ -721,6 +784,7 @@ def generate_wallet_explanation(row):
     # -----------------------------------------------------
 
     if row["counterparty_signal"] >= 70:
+
         reasons.append(
             "Connected to many counterparties"
         )
@@ -730,6 +794,7 @@ def generate_wallet_explanation(row):
     # -----------------------------------------------------
 
     if row["graph_signal"] >= 70:
+
         reasons.append(
             "High graph connectivity"
         )
@@ -739,6 +804,7 @@ def generate_wallet_explanation(row):
     # -----------------------------------------------------
 
     if row["centrality_signal"] >= 70:
+
         reasons.append(
             "High graph centrality"
         )
@@ -751,8 +817,10 @@ def generate_wallet_explanation(row):
         "cluster_signal" in row.index
         and row["cluster_signal"] >= 70
     ):
+
         reasons.append(
-            "Behavior belongs to a high-risk behavioral cluster"
+            "Behavior belongs to a high-scoring "
+            "behavioral cluster"
         )
 
     # -----------------------------------------------------
@@ -761,11 +829,14 @@ def generate_wallet_explanation(row):
 
     if (
         "cluster_type" in row.index
-        and str(row["cluster_type"]).upper()
-        == "NOISE"
+        and str(
+            row["cluster_type"]
+        ).upper() == "NOISE"
     ):
+
         reasons.append(
-            "Behavior does not fit a dense DBSCAN cluster"
+            "Behavior does not fit a dense "
+            "DBSCAN cluster"
         )
 
     # -----------------------------------------------------
@@ -773,11 +844,14 @@ def generate_wallet_explanation(row):
     # -----------------------------------------------------
 
     if not reasons:
+
         reasons.append(
             "No dominant anomalous signal"
         )
 
-    return "; ".join(reasons)
+    return "; ".join(
+        reasons
+    )
 
 
 # =========================================================
@@ -824,7 +898,9 @@ def generate_ip_explanation(row):
             "No dominant anomalous signal"
         )
 
-    return "; ".join(reasons)
+    return "; ".join(
+        reasons
+    )
 
 
 # =========================================================
@@ -865,7 +941,384 @@ def generate_transaction_explanation(row):
             "No dominant anomalous signal"
         )
 
-    return "; ".join(reasons)
+    return "; ".join(
+        reasons
+    )
+
+
+# =========================================================
+# SIGNAL CONTRIBUTIONS
+# =========================================================
+
+def get_wallet_signal_contributions(row):
+    """
+    Calculate the weighted contribution of each
+    wallet signal to the final risk score.
+    """
+
+    return {
+
+        "ML Anomaly":
+            0.30 * float(
+                row.get(
+                    "ml_signal",
+                    0
+                )
+            ),
+
+        "Graph":
+            0.18 * float(
+                row.get(
+                    "graph_signal",
+                    0
+                )
+            ),
+
+        "Activity":
+            0.18 * float(
+                row.get(
+                    "activity_signal",
+                    0
+                )
+            ),
+
+        "Network":
+            0.10 * float(
+                row.get(
+                    "network_signal",
+                    0
+                )
+            ),
+
+        "Counterparty":
+            0.09 * float(
+                row.get(
+                    "counterparty_signal",
+                    0
+                )
+            ),
+
+        "Centrality":
+            0.05 * float(
+                row.get(
+                    "centrality_signal",
+                    0
+                )
+            ),
+
+        "Cluster":
+            0.10 * float(
+                row.get(
+                    "cluster_signal",
+                    0
+                )
+            )
+    }
+
+
+def get_ip_signal_contributions(row):
+    """
+    Calculate the weighted contribution of each
+    IP signal to the final risk score.
+    """
+
+    return {
+
+        "ML Anomaly":
+            0.35 * float(
+                row.get(
+                    "ml_signal",
+                    0
+                )
+            ),
+
+        "Graph":
+            0.20 * float(
+                row.get(
+                    "graph_signal",
+                    0
+                )
+            ),
+
+        "Activity":
+            0.20 * float(
+                row.get(
+                    "activity_signal",
+                    0
+                )
+            ),
+
+        "Wallet Connections":
+            0.15 * float(
+                row.get(
+                    "wallet_signal",
+                    0
+                )
+            ),
+
+        "Destination Connections":
+            0.10 * float(
+                row.get(
+                    "destination_signal",
+                    0
+                )
+            )
+    }
+
+
+def get_transaction_signal_contributions(row):
+    """
+    Calculate the weighted contribution of each
+    transaction signal to the final risk score.
+    """
+
+    return {
+
+        "ML Anomaly":
+            0.55 * float(
+                row.get(
+                    "ml_signal",
+                    0
+                )
+            ),
+
+        "Transaction Amount":
+            0.20 * float(
+                row.get(
+                    "amount_signal",
+                    0
+                )
+            ),
+
+        "Transaction Fee":
+            0.10 * float(
+                row.get(
+                    "fee_signal",
+                    0
+                )
+            ),
+
+        "Temporal Burst":
+            0.15 * float(
+                row.get(
+                    "temporal_signal",
+                    0
+                )
+            )
+    }
+
+
+# =========================================================
+# GET TOP CONTRIBUTING SIGNAL
+# =========================================================
+
+def get_top_contributing_signal(
+    contributions
+):
+
+    if not contributions:
+        return "None"
+
+    return max(
+        contributions,
+        key=contributions.get
+    )
+
+
+# =========================================================
+# FORMAT CONTRIBUTIONS
+# =========================================================
+
+def format_signal_contributions(
+    contributions
+):
+
+    if not contributions:
+
+        return (
+            "No signal contributions available."
+        )
+
+    sorted_contributions = sorted(
+        contributions.items(),
+        key=lambda item: item[1],
+        reverse=True
+    )
+
+    lines = []
+
+    for signal, contribution in (
+        sorted_contributions
+    ):
+
+        lines.append(
+            f"{signal}: {contribution:.2f}"
+        )
+
+    return " | ".join(
+        lines
+    )
+
+
+# =========================================================
+# CREATE SIGNAL CONTRIBUTION COLUMNS
+# =========================================================
+
+def add_wallet_contribution_columns(
+    df
+):
+
+    for index, row in df.iterrows():
+
+        contributions = (
+            get_wallet_signal_contributions(
+                row
+            )
+        )
+
+        df.loc[
+            index,
+            "contribution_ml"
+        ] = contributions[
+            "ML Anomaly"
+        ]
+
+        df.loc[
+            index,
+            "contribution_graph"
+        ] = contributions[
+            "Graph"
+        ]
+
+        df.loc[
+            index,
+            "contribution_activity"
+        ] = contributions[
+            "Activity"
+        ]
+
+        df.loc[
+            index,
+            "contribution_network"
+        ] = contributions[
+            "Network"
+        ]
+
+        df.loc[
+            index,
+            "contribution_counterparty"
+        ] = contributions[
+            "Counterparty"
+        ]
+
+        df.loc[
+            index,
+            "contribution_centrality"
+        ] = contributions[
+            "Centrality"
+        ]
+
+        df.loc[
+            index,
+            "contribution_cluster"
+        ] = contributions[
+            "Cluster"
+        ]
+
+    return df
+
+
+def add_ip_contribution_columns(
+    df
+):
+
+    for index, row in df.iterrows():
+
+        contributions = (
+            get_ip_signal_contributions(
+                row
+            )
+        )
+
+        df.loc[
+            index,
+            "contribution_ml"
+        ] = contributions[
+            "ML Anomaly"
+        ]
+
+        df.loc[
+            index,
+            "contribution_graph"
+        ] = contributions[
+            "Graph"
+        ]
+
+        df.loc[
+            index,
+            "contribution_activity"
+        ] = contributions[
+            "Activity"
+        ]
+
+        df.loc[
+            index,
+            "contribution_wallets"
+        ] = contributions[
+            "Wallet Connections"
+        ]
+
+        df.loc[
+            index,
+            "contribution_destinations"
+        ] = contributions[
+            "Destination Connections"
+        ]
+
+    return df
+
+
+def add_transaction_contribution_columns(
+    df
+):
+
+    for index, row in df.iterrows():
+
+        contributions = (
+            get_transaction_signal_contributions(
+                row
+            )
+        )
+
+        df.loc[
+            index,
+            "contribution_ml"
+        ] = contributions[
+            "ML Anomaly"
+        ]
+
+        df.loc[
+            index,
+            "contribution_amount"
+        ] = contributions[
+            "Transaction Amount"
+        ]
+
+        df.loc[
+            index,
+            "contribution_fee"
+        ] = contributions[
+            "Transaction Fee"
+        ]
+
+        df.loc[
+            index,
+            "contribution_temporal"
+        ] = contributions[
+            "Temporal Burst"
+        ]
+
+    return df
 
 
 # =========================================================
@@ -890,23 +1343,56 @@ def create_alerts(
             row["risk_score"]
         )
 
-        alerts.append({
-            "entity_type": "WALLET",
-            "entity": row["wallet"],
-            "risk_score": round(
-                score,
-                2
-            ),
-            "risk_level": assign_risk_level(
-                score
-            ),
-            "confidence": calculate_confidence(
-                score
-            ),
-            "evidence": generate_wallet_explanation(
+        contributions = (
+            get_wallet_signal_contributions(
                 row
             )
+        )
+
+        top_signal = (
+            get_top_contributing_signal(
+                contributions
+            )
+        )
+
+        alerts.append({
+
+            "entity_type":
+                "WALLET",
+
+            "entity":
+                row["wallet"],
+
+            "risk_score":
+                round(
+                    score,
+                    2
+                ),
+
+            "risk_level":
+                assign_risk_level(
+                    score
+                ),
+
+            "confidence":
+                calculate_confidence(
+                    score
+                ),
+
+            "top_signal":
+                top_signal,
+
+            "evidence":
+                generate_wallet_explanation(
+                    row
+                ),
+
+            "signal_contributions":
+                format_signal_contributions(
+                    contributions
+                )
         })
+
 
     # -----------------------------------------------------
     # IP alerts
@@ -918,23 +1404,56 @@ def create_alerts(
             row["risk_score"]
         )
 
-        alerts.append({
-            "entity_type": "IP",
-            "entity": row["src_ip"],
-            "risk_score": round(
-                score,
-                2
-            ),
-            "risk_level": assign_risk_level(
-                score
-            ),
-            "confidence": calculate_confidence(
-                score
-            ),
-            "evidence": generate_ip_explanation(
+        contributions = (
+            get_ip_signal_contributions(
                 row
             )
+        )
+
+        top_signal = (
+            get_top_contributing_signal(
+                contributions
+            )
+        )
+
+        alerts.append({
+
+            "entity_type":
+                "IP",
+
+            "entity":
+                row["src_ip"],
+
+            "risk_score":
+                round(
+                    score,
+                    2
+                ),
+
+            "risk_level":
+                assign_risk_level(
+                    score
+                ),
+
+            "confidence":
+                calculate_confidence(
+                    score
+                ),
+
+            "top_signal":
+                top_signal,
+
+            "evidence":
+                generate_ip_explanation(
+                    row
+                ),
+
+            "signal_contributions":
+                format_signal_contributions(
+                    contributions
+                )
         })
+
 
     # -----------------------------------------------------
     # Transaction alerts
@@ -946,38 +1465,89 @@ def create_alerts(
             row["risk_score"]
         )
 
-        alerts.append({
-            "entity_type": "TRANSACTION",
-            "entity": row["txid"],
-            "risk_score": round(
-                score,
-                2
-            ),
-            "risk_level": assign_risk_level(
-                score
-            ),
-            "confidence": calculate_confidence(
-                score
-            ),
-            "evidence": generate_transaction_explanation(
+        contributions = (
+            get_transaction_signal_contributions(
                 row
             )
+        )
+
+        top_signal = (
+            get_top_contributing_signal(
+                contributions
+            )
+        )
+
+        alerts.append({
+
+            "entity_type":
+                "TRANSACTION",
+
+            "entity":
+                row["txid"],
+
+            "risk_score":
+                round(
+                    score,
+                    2
+                ),
+
+            "risk_level":
+                assign_risk_level(
+                    score
+                ),
+
+            "confidence":
+                calculate_confidence(
+                    score
+                ),
+
+            "top_signal":
+                top_signal,
+
+            "evidence":
+                generate_transaction_explanation(
+                    row
+                ),
+
+            "signal_contributions":
+                format_signal_contributions(
+                    contributions
+                )
         })
+
+
+    # -----------------------------------------------------
+    # Create dataframe
+    # -----------------------------------------------------
 
     alerts_df = pd.DataFrame(
         alerts
     )
 
-    alerts_df = alerts_df.sort_values(
-        "risk_score",
-        ascending=False
-    ).reset_index(
-        drop=True
-    )
+    # -----------------------------------------------------
+    # Sort by risk score
+    # -----------------------------------------------------
 
-    alerts_df["priority_rank"] = (
-        alerts_df.index + 1
-    )
+    if not alerts_df.empty:
+
+        alerts_df = (
+            alerts_df
+            .sort_values(
+                "risk_score",
+                ascending=False
+            )
+            .reset_index(
+                drop=True
+            )
+        )
+
+        # -------------------------------------------------
+        # Priority rank
+        # -------------------------------------------------
+
+        alerts_df["priority_rank"] = (
+            alerts_df.index + 1
+        )
 
     return alerts_df
 
@@ -999,24 +1569,50 @@ def save_outputs(
     )
 
     wallet_file = (
-        PROCESSED_DIR /
-        "wallet_risk_scores.csv"
+        PROCESSED_DIR
+        / "wallet_risk_scores.csv"
     )
 
     ip_file = (
-        PROCESSED_DIR /
-        "ip_risk_scores.csv"
+        PROCESSED_DIR
+        / "ip_risk_scores.csv"
     )
 
     transaction_file = (
-        PROCESSED_DIR /
-        "transaction_risk_scores.csv"
+        PROCESSED_DIR
+        / "transaction_risk_scores.csv"
     )
 
     alert_file = (
-        PROCESSED_DIR /
-        "prioritized_alerts.csv"
+        PROCESSED_DIR
+        / "prioritized_alerts.csv"
     )
+
+    # -----------------------------------------------------
+    # Add contribution columns
+    # -----------------------------------------------------
+
+    wallet_risk = (
+        add_wallet_contribution_columns(
+            wallet_risk
+        )
+    )
+
+    ip_risk = (
+        add_ip_contribution_columns(
+            ip_risk
+        )
+    )
+
+    transaction_risk = (
+        add_transaction_contribution_columns(
+            transaction_risk
+        )
+    )
+
+    # -----------------------------------------------------
+    # Save
+    # -----------------------------------------------------
 
     wallet_risk.to_csv(
         wallet_file,
@@ -1107,31 +1703,37 @@ if __name__ == "__main__":
     # Transaction risk
     # -----------------------------------------------------
 
-    transaction_risk = create_transaction_risk(
-        ml_df
+    transaction_risk = (
+        create_transaction_risk(
+            ml_df
+        )
     )
 
     # -----------------------------------------------------
     # Wallet risk
     # -----------------------------------------------------
 
-    wallet_risk = create_wallet_risk(
-        wallet_df,
-        graph_df,
-        centrality_df,
-        correlation_df,
-        cluster_df
+    wallet_risk = (
+        create_wallet_risk(
+            wallet_df,
+            graph_df,
+            centrality_df,
+            correlation_df,
+            cluster_df
+        )
     )
 
     # -----------------------------------------------------
     # IP risk
     # -----------------------------------------------------
 
-    ip_risk = create_ip_risk(
-        ip_df,
-        graph_df,
-        centrality_df,
-        correlation_df
+    ip_risk = (
+        create_ip_risk(
+            ip_df,
+            graph_df,
+            centrality_df,
+            correlation_df
+        )
     )
 
     # -----------------------------------------------------
@@ -1164,20 +1766,31 @@ if __name__ == "__main__":
     print("TOP PRIORITIZED INVESTIGATIVE LEADS")
     print("=" * 60)
 
-    print(
-        alerts[
-            [
-                "priority_rank",
-                "entity_type",
-                "entity",
-                "risk_score",
-                "risk_level",
-                "confidence"
+    if not alerts.empty:
+
+        print(
+            alerts[
+                [
+                    "priority_rank",
+                    "entity_type",
+                    "entity",
+                    "risk_score",
+                    "risk_level",
+                    "confidence",
+                    "top_signal"
+                ]
             ]
-        ]
-        .head(20)
-        .to_string(index=False)
-    )
+            .head(20)
+            .to_string(
+                index=False
+            )
+        )
+
+    else:
+
+        print(
+            "No alerts generated."
+        )
 
     # -----------------------------------------------------
     # Display explanations
@@ -1188,7 +1801,9 @@ if __name__ == "__main__":
     print("TOP ALERT EXPLANATIONS")
     print("=" * 60)
 
-    for _, row in alerts.head(10).iterrows():
+    for _, row in (
+        alerts.head(10).iterrows()
+    ):
 
         print(
             f"\n#{row['priority_rank']} "
@@ -1212,8 +1827,18 @@ if __name__ == "__main__":
         )
 
         print(
+            f"Top Signal : "
+            f"{row['top_signal']}"
+        )
+
+        print(
             f"Evidence   : "
             f"{row['evidence']}"
+        )
+
+        print(
+            f"Contributions: "
+            f"{row['signal_contributions']}"
         )
 
     # -----------------------------------------------------
@@ -1230,24 +1855,38 @@ if __name__ == "__main__":
         f"{len(alerts)}"
     )
 
-    print(
-        f"Critical alerts: "
-        f"{(alerts['risk_level'] == 'CRITICAL').sum()}"
-    )
+    if not alerts.empty:
 
-    print(
-        f"High alerts: "
-        f"{(alerts['risk_level'] == 'HIGH').sum()}"
-    )
+        print(
+            f"Critical alerts: "
+            f"{(
+                alerts['risk_level']
+                == 'CRITICAL'
+            ).sum()}"
+        )
 
-    print(
-        f"Medium alerts: "
-        f"{(alerts['risk_level'] == 'MEDIUM').sum()}"
-    )
+        print(
+            f"High alerts: "
+            f"{(
+                alerts['risk_level']
+                == 'HIGH'
+            ).sum()}"
+        )
 
-    print(
-        f"Low alerts: "
-        f"{(alerts['risk_level'] == 'LOW').sum()}"
-    )
+        print(
+            f"Medium alerts: "
+            f"{(
+                alerts['risk_level']
+                == 'MEDIUM'
+            ).sum()}"
+        )
+
+        print(
+            f"Low alerts: "
+            f"{(
+                alerts['risk_level']
+                == 'LOW'
+            ).sum()}"
+        )
 
     print("=" * 60)

@@ -1,4 +1,14 @@
 import argparse
+def parse_arguments():
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument(
+        "--input",
+        required=True
+    )
+
+    return parser.parse_args()
 try:
     import pandas as pd  # type: ignore
 except ImportError:  # pragma: no cover - handled at runtime when pandas is unavailable
@@ -62,29 +72,41 @@ def load_dataset(file_path):
     else:
         raise ValueError(f"Unsupported file format: {extension}")
 
-
 if __name__ == "__main__":
 
-    files = [
-        DATA_DIR / "bitcoin_transactions.csv",
-        DATA_DIR / "bitcoin_transactions.json",
-        DATA_DIR / "bitcoin_transactions.xml"
-    ]
+    args = parse_arguments()
 
-    for file in files:
+    input_file = Path(
+        args.input
+    ).resolve()
 
-        print("\n" + "=" * 60)
-        print(f"Loading: {file.name}")
-        print("=" * 60)
+    print("=" * 60)
+    print("BITCOIN DATA INGESTION")
+    print("=" * 60)
 
-        try:
-            df = load_dataset(file)
-        
-            print(f"Records loaded: {len(df)}")
-            print(f"Columns: {len(df.columns)}")
-            validate_dataframe(df)
-            print("\nFirst 3 records:")
-            print(df.head(3))
+    print(
+        f"\nLoading: {input_file}"
+    )
 
-        except Exception as error:
-            print(f"ERROR: {error}")
+    try:
+
+        df = load_dataset(input_file)
+
+        print(
+            f"Records loaded: {len(df)}"
+        )
+
+        print(
+            f"Columns: {len(df.columns)}"
+        )
+
+        print("\nFirst 3 records:")
+        print(df.head(3))
+
+    except Exception as error:
+
+        print(
+            f"ERROR: {error}"
+        )
+
+        raise
