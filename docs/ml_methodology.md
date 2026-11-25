@@ -1,114 +1,963 @@
 # Machine Learning Methodology
 
-## 1. Feature Engineering
+## 1. Overview
 
-The system derives behavioral features from transaction,
-network and graph data.
+The **AI-Powered Monitoring & Analysis of Bitcoin Transaction Traffic** system uses machine learning and graph-based analytics to identify unusual transaction behavior and prioritize entities for investigation.
 
-Examples:
+The system analyzes three main entity types:
+
+- **Transactions**
+- **Wallets**
+- **IP addresses**
+
+The machine learning pipeline combines:
+
+1. Transaction-level anomaly detection
+2. Wallet and IP behavioral analysis
+3. Graph-based entity analysis
+4. Wallet clustering
+5. Multi-factor risk scoring
+6. Explainable investigation alerts
+7. Model evaluation
+
+The system is designed as an **offline analysis platform**. It does not depend on live blockchain traffic or external online services during normal operation.
+
+---
+
+# 2. Machine Learning Pipeline
+
+The overall process is:
+
+```text
+Raw Transaction Data
+        |
+        v
+Data Validation
+        |
+        v
+Data Cleaning
+        |
+        v
+Feature Engineering
+        |
+        +----------------------+
+        |                      |
+        v                      v
+ Transaction Features     Graph Construction
+        |                      |
+        v                      v
+ Isolation Forest        Graph Features
+        |                      |
+        +----------+-----------+
+                   |
+                   v
+          Entity-Level Analysis
+                   |
+                   +------------------+
+                   |                  |
+                   v                  v
+             DBSCAN Clustering   Risk Scoring
+                   |                  |
+                   +--------+---------+
+                            |
+                            v
+                  Explainable Alerts
+                            |
+                            v
+                     Dashboard
+```
+
+---
+
+# 3. Data Used by the ML System
+
+The input dataset contains transaction and network-related information.
+
+Important fields include:
+
+| Field | Description |
+|---|---|
+| `timestamp` | Time at which the transaction/network event occurred |
+| `src_ip` | Source IP address |
+| `dst_ip` | Destination IP address |
+| `src_port` | Source network port |
+| `dst_port` | Destination network port |
+| `txid` | Transaction identifier |
+| `input_addresses` | Input wallet addresses |
+| `output_addresses` | Output wallet addresses |
+| `input_amounts` | Input transaction amounts |
+| `output_amounts` | Output transaction amounts |
+| `fee` | Transaction fee |
+| `script_type` | Bitcoin script type |
+| `geo_country` | Geographic country information |
+| `asn` | Autonomous System Number |
+
+The dataset used for development is **synthetic** and is designed to resemble realistic Bitcoin transaction and network metadata.
+
+---
+
+# 4. Data Preparation
+
+Machine learning is performed only after the input data has passed validation and cleaning.
+
+## 4.1 Validation
+
+The validation stage checks:
+
+- Required columns
+- Missing values
+- IP address format
+- Port values
+- Timestamp format
+- Numeric transaction values
+- Duplicate transaction IDs
+
+Invalid or incomplete records are identified before feature generation.
+
+---
+
+## 4.2 Cleaning
+
+The cleaning stage performs operations such as:
+
+- Removing empty records
+- Removing duplicate transaction IDs
+- Standardizing timestamps
+- Normalizing IP addresses
+- Normalizing transaction IDs
+- Converting numeric fields into numeric data types
+- Parsing wallet address arrays
+- Calculating transaction-level totals and counts
+
+The cleaned data is then passed to feature engineering.
+
+---
+
+# 5. Geo-IP and ASN Enrichment
+
+The system supports local Geo-IP and ASN enrichment.
+
+For an IP address, the system can obtain:
+
+- Country
+- ASN
+- Destination country
+- Destination ASN
+
+Additional derived features include:
+
+- Cross-country transaction indicator
+- Cross-ASN transaction indicator
+- Number of unique countries associated with an IP
+- Number of unique ASNs associated with an IP
+
+Private and reserved addresses are retained and identified as:
+
+```text
+PRIVATE_OR_RESERVED
+```
+
+This prevents private synthetic addresses from being incorrectly treated as public geographic locations.
+
+---
+
+# 6. Feature Engineering
+
+Feature engineering converts raw transaction records into numerical behavioral indicators that can be processed by machine learning algorithms.
+
+## 6.1 Transaction Features
+
+Examples include:
 
 - Transaction amount
-- Fee
-- Input count
-- Output count
+- Transaction fee
+- Number of input addresses
+- Number of output addresses
+- Total input amount
+- Total output amount
+- Transaction time
+- Script type
+
+These features describe the behavior and structure of individual transactions.
+
+---
+
+## 6.2 Wallet Features
+
+Wallet-level behavioral features are generated by aggregating transactions associated with each wallet.
+
+Examples include:
+
+- Transaction count
+- Total transaction amount
+- Average transaction amount
+- Number of counterparties
+- Input activity
+- Output activity
 - Transaction frequency
-- Wallet transaction count
-- Wallet-to-IP diversity
-- Wallet counterparties
-- IP transaction count
-- IP-to-wallet diversity
-- Temporal transaction gaps
-- Graph degree
-- Graph centrality
-- Geo-IP/ASN behavior
+- Temporal activity
+
+These features allow the system to identify wallets whose behavior differs from the general population.
 
 ---
 
-## 2. Isolation Forest
+## 6.3 IP Features
 
-Isolation Forest is used for unsupervised anomaly detection.
+IP-level features describe the network behavior associated with an IP address.
 
-Input:
-Behavioral transaction features.
+Examples include:
 
-Output:
-
-- ML prediction
-- Decision score
-- Normalized anomaly score
-
-Prediction values:
-
-- 1 = normal
-- -1 = anomaly
-
-The normalized anomaly score is mapped to a 0-100 range
-for downstream prioritization.
+- Number of transactions
+- Number of unique wallets
+- Number of unique transactions
+- Number of countries
+- Number of ASNs
+- Transaction frequency
+- Cross-country activity
+- Cross-ASN activity
 
 ---
 
-## 3. DBSCAN
+## 6.4 Temporal Features
 
-DBSCAN is used to identify behavioral clusters among wallets.
+Transaction timestamps are transformed into behavioral indicators such as:
 
-Input:
+- Hour of day
+- Day-related activity
+- Transaction frequency
+- Activity bursts
+- Time-based transaction patterns
 
-Wallet behavioral and graph features.
-
-Output:
-
-- Cluster ID
-- Cluster type
-- Noise entities
-
-Cluster ID -1 represents DBSCAN noise.
-
-Noise is not automatically interpreted as malicious activity.
+These features help identify unusually concentrated or rapid activity.
 
 ---
 
-## 4. Risk Scoring
+# 7. Transaction Anomaly Detection
 
-Risk is derived by combining multiple signals:
+The primary transaction anomaly detector is the **Isolation Forest** algorithm.
 
-- ML anomaly
-- Graph structure
-- Transaction activity
-- Network behavior
+## 7.1 Why Isolation Forest?
+
+Isolation Forest is suitable for this project because anomaly detection is fundamentally an **unsupervised learning problem**.
+
+In a real monitoring environment, previously labeled malicious transactions may not always be available.
+
+Isolation Forest works by attempting to isolate observations through random partitioning.
+
+Unusual observations generally require fewer partitions to isolate than normal observations.
+
+Therefore:
+
+```text
+Easy to isolate
+      ↓
+Potential anomaly
+```
+
+while:
+
+```text
+Difficult to isolate
+      ↓
+More typical behavior
+```
+
+---
+
+# 8. Isolation Forest Process
+
+The process is:
+
+```text
+Engineered Transaction Features
+             |
+             v
+       Isolation Forest
+             |
+             v
+    Anomaly Score / Label
+             |
+       +-----+-----+
+       |           |
+       v           v
+    Normal      Anomaly
+```
+
+The model generates an anomaly signal for each transaction.
+
+The system converts this information into an anomaly result that can be used by subsequent entity-level analysis and risk scoring.
+
+---
+
+# 9. Avoiding Data Leakage
+
+The field:
+
+```text
+synthetic_scenario
+```
+
+is used only for **evaluation**.
+
+It is not used as an input feature for the anomaly detection model.
+
+This is important because including the synthetic scenario label during training would allow the model to directly use information that represents the expected answer.
+
+Therefore:
+
+```text
+synthetic_scenario
+        |
+        +----> NOT used for ML features
+        |
+        +----> Used for evaluation only
+```
+
+This provides a cleaner measurement of how well the unsupervised detector identifies unusual behavior.
+
+---
+
+# 10. Entity-Level Analysis
+
+Transaction anomalies are aggregated to identify potentially unusual entities.
+
+The system evaluates:
+
+- Wallets
+- IP addresses
+
+A transaction anomaly can contribute evidence to the behavior of the wallet and IP addresses associated with that transaction.
+
+This creates the following relationship:
+
+```text
+IP Address
+     |
+     v
+Transaction
+     |
+     v
+Wallet
+```
+
+The same relationships are also represented in the graph analysis component.
+
+---
+
+# 11. Wallet and IP Anomaly Scores
+
+The system aggregates transaction-level anomaly information to generate entity-level anomaly signals.
+
+For wallets, the analysis considers factors such as:
+
+- Number of anomalous transactions
+- Overall transaction activity
 - Counterparty behavior
+- Network behavior
+- Graph characteristics
+- Cluster behavior
+
+For IP addresses, the analysis considers factors such as:
+
+- Associated transaction activity
+- Associated wallet activity
+- Anomalous transaction relationships
+- Geographic/ASN behavior
+- Graph relationships
+
+These signals are later combined into risk scores.
+
+---
+
+# 12. Wallet Clustering
+
+The system uses **DBSCAN** for wallet behavioral clustering.
+
+DBSCAN stands for:
+
+> Density-Based Spatial Clustering of Applications with Noise
+
+It groups wallets that have similar behavioral characteristics.
+
+---
+
+## 12.1 Why DBSCAN?
+
+DBSCAN is useful because it:
+
+- Does not require a predefined number of clusters
+- Identifies dense groups of similar observations
+- Can identify isolated observations as noise
+- Works well for exploratory behavioral analysis
+
+The system applies DBSCAN to wallet behavioral features.
+
+---
+
+# 13. DBSCAN Output
+
+The clustering stage produces:
+
+```text
+Wallet
+   |
+   v
+Behavioral Features
+   |
+   v
+DBSCAN
+   |
+   +---- Cluster 0
+   |
+   +---- Cluster 1
+   |
+   +---- Cluster 2
+   |
+   +---- Noise (-1)
+```
+
+A DBSCAN label of:
+
+```text
+-1
+```
+
+means that the wallet was identified as a **noise/outlier point by DBSCAN**.
+
+It does **not** automatically mean that the wallet is malicious.
+
+This distinction is important.
+
+---
+
+# 14. Graph-Based Analysis
+
+The system creates an entity graph using:
+
+- IP addresses
+- Transactions
+- Wallets
+
+The graph represents relationships between these entities.
+
+A simplified structure is:
+
+```text
+       IP
+        |
+        | OBSERVED
+        v
+    TRANSACTION
+      /       \
+     /         \
+ INPUT         OUTPUT
+   /             \
+  v               v
+WALLET          WALLET
+```
+
+The graph can be used to derive structural features such as:
+
+- Degree
 - Centrality
-- Behavioral clustering
+- Entity connectivity
+- Relationship counts
+- Network position
 
-The final score is normalized to a 0-100 prioritization scale.
+These features provide additional evidence for entity-level analysis.
 
 ---
 
-## 5. Explainability
+# 15. Graph Centrality
 
-Every alert includes evidence explaining which signals
-contributed to its priority.
+Graph centrality measures help identify entities that occupy important positions within the transaction network.
 
-Examples:
+The system can use centrality-related signals as part of risk scoring.
 
-- High ML anomaly score
+A highly connected entity may deserve additional investigation because it participates in many relationships.
+
+However:
+
+> High connectivity does not by itself indicate malicious activity.
+
+It is treated as one signal among several.
+
+---
+
+# 16. Multi-Factor Risk Scoring
+
+The final risk score does not depend on a single machine learning model.
+
+Instead, multiple evidence sources are combined.
+
+For wallets, the current scoring framework uses:
+
+| Signal | Weight |
+|---|---:|
+| ML Signal | 0.30 |
+| Graph Signal | 0.18 |
+| Activity Signal | 0.18 |
+| Network Signal | 0.10 |
+| Counterparty Signal | 0.09 |
+| Centrality Signal | 0.05 |
+| Cluster Signal | 0.10 |
+
+Total:
+
+```text
+0.30 + 0.18 + 0.18 + 0.10
++ 0.09 + 0.05 + 0.10
+= 1.00
+```
+
+Therefore, the weighted signals form a normalized composite score.
+
+---
+
+# 17. Risk Score Interpretation
+
+The final score is represented on a 0-100 scale.
+
+A typical interpretation is:
+
+| Risk Score | Level |
+|---:|---|
+| 0-39 | LOW |
+| 40-59 | MEDIUM |
+| 60-79 | HIGH |
+| 80-100 | CRITICAL |
+
+The thresholds are used for **investigation prioritization**.
+
+They should not be interpreted as proof that an entity is involved in criminal activity.
+
+---
+
+# 18. Explainable Risk Scoring
+
+The system provides explanations for why an entity received its risk score.
+
+Possible evidence includes:
+
+- High anomaly signal
 - High transaction activity
-- Many connected IP addresses
-- High graph connectivity
-- High behavioral cluster signal
+- Strong graph connectivity
+- Unusual network behavior
+- Counterparty relationships
+- Centrality
+- Cluster membership
+
+The objective is to allow an analyst to understand the main signals contributing to an alert instead of receiving only a numerical score.
 
 ---
 
-## 6. Evaluation
+# 19. Confidence Indicator
 
-The synthetic dataset contains controlled scenarios for
-offline evaluation.
+The system provides a confidence indicator based on the available evidence.
 
-The synthetic scenario label is NOT used as an ML feature.
+This value is intended to communicate how strongly the available signals support the generated risk assessment.
 
-It is used only to calculate:
+It is important to distinguish this from a calibrated probability.
+
+For example:
+
+```text
+Confidence: 86
+```
+
+does **not** mean:
+
+```text
+86% probability of criminal activity
+```
+
+It represents the strength or consistency of the available analytical signals.
+
+---
+
+# 20. Alert Prioritization
+
+The system combines risk information and supporting evidence to produce a prioritized alert list.
+
+A simplified workflow is:
+
+```text
+Transactions
+     |
+     v
+Anomaly Detection
+     |
+     v
+Entity Analysis
+     |
+     v
+Graph Analysis
+     |
+     v
+Clustering
+     |
+     v
+Risk Scoring
+     |
+     v
+Explainable Alerts
+```
+
+Analysts can use these alerts to decide which entities deserve further investigation.
+
+---
+
+# 21. Model Evaluation
+
+The synthetic dataset contains scenario information that can be used to evaluate the anomaly detection system.
+
+The evaluation process compares:
+
+```text
+Model Prediction
+       vs
+Synthetic Scenario Label
+```
+
+The primary evaluation metrics are:
 
 - Precision
 - Recall
 - F1-score
-- Confusion matrix
-- Scenario detection rate
+
+---
+
+## 21.1 Precision
+
+Precision measures how many detected anomalies were actually anomalous according to the evaluation labels.
+
+```text
+Precision =
+True Positives
+----------------------------
+True Positives + False Positives
+```
+
+High precision means fewer normal transactions are incorrectly classified as anomalies.
+
+---
+
+## 21.2 Recall
+
+Recall measures how many of the anomalous transactions were successfully detected.
+
+```text
+Recall =
+True Positives
+----------------------------
+True Positives + False Negatives
+```
+
+High recall means the system detects a larger proportion of the anomalous cases.
+
+---
+
+## 21.3 F1-Score
+
+F1-score combines precision and recall.
+
+```text
+F1 =
+2 × Precision × Recall
+-------------------------
+Precision + Recall
+```
+
+It is useful when both missed anomalies and false alerts are important.
+
+---
+
+# 22. Model Tuning
+
+The project includes a model tuning stage for the Isolation Forest contamination parameter.
+
+The tested values include:
+
+```text
+0.03
+0.05
+0.08
+0.10
+0.12
+```
+
+The purpose of testing multiple values is to understand how the expected proportion of anomalies affects model performance.
+
+The final configuration should be selected based on the actual evaluation results rather than assuming that a particular contamination value is universally optimal.
+
+---
+
+# 23. Clustering Evaluation
+
+DBSCAN clustering is primarily used for behavioral exploration and supporting evidence.
+
+Cluster membership is not treated as a direct maliciousness label.
+
+For example:
+
+```text
+Cluster 2
+```
+
+means that wallets exhibit similar behavioral characteristics.
+
+It does not mean:
+
+```text
+Cluster 2 = malicious wallets
+```
+
+Similarly:
+
+```text
+DBSCAN = -1
+```
+
+means the point was considered noise by the clustering algorithm, not that it is automatically malicious.
+
+---
+
+# 24. End-to-End ML Architecture
+
+The complete analytical architecture is:
+
+```text
+                  RAW DATA
+                     |
+                     v
+              DATA VALIDATION
+                     |
+                     v
+               DATA CLEANING
+                     |
+                     v
+              GEO-IP / ASN
+                 ENRICHMENT
+                     |
+                     v
+             FEATURE ENGINEERING
+                     |
+          +----------+----------+
+          |                     |
+          v                     v
+ TRANSACTION FEATURES      ENTITY GRAPH
+          |                     |
+          v                     v
+ ISOLATION FOREST       GRAPH FEATURES
+          |                     |
+          +----------+----------+
+                     |
+                     v
+              ENTITY ANALYSIS
+                     |
+              +------+------+
+              |             |
+              v             v
+         WALLET/IP       DBSCAN
+         ANALYSIS       CLUSTERING
+              |             |
+              +------+------+
+                     |
+                     v
+                RISK SCORING
+                     |
+                     v
+             EXPLAINABLE ALERTS
+                     |
+                     v
+                 DASHBOARD
+```
+
+---
+
+# 25. Dashboard Integration
+
+The machine learning results are displayed through the Streamlit dashboard.
+
+The AI/ML analysis section provides views for:
+
+- Transaction anomalies
+- Wallet analysis
+- IP analysis
+- Clustering
+- Model evaluation
+
+The Entity Graph page provides interactive investigation of:
+
+```text
+IP ↔ TRANSACTION ↔ WALLET
+```
+
+This allows analysts to move from a numerical anomaly or risk score to the relationships surrounding the entity.
+
+---
+
+# 26. Investigation Workflow
+
+A typical investigation can follow this process:
+
+```text
+1. Import transaction dataset
+             |
+             v
+2. Validate and clean data
+             |
+             v
+3. Run feature engineering
+             |
+             v
+4. Detect transaction anomalies
+             |
+             v
+5. Review wallet/IP risk scores
+             |
+             v
+6. Read explanation signals
+             |
+             v
+7. Open entity in graph
+             |
+             v
+8. Explore connected transactions
+             |
+             v
+9. Investigate connected wallets/IPs
+```
+
+The graph supports two investigation actions:
+
+### Explore This Node
+
+The selected node becomes the new center of exploration.
+
+```text
+Current Node
+     |
+     v
+New Investigation Center
+```
+
+### Focus on This Node's Links
+
+The selected node is examined while maintaining the original investigation context.
+
+This allows an analyst to inspect a relationship without losing the original investigation root.
+
+---
+
+# 27. Offline Design
+
+The ML pipeline is designed to operate offline.
+
+The main processing components are:
+
+- Python
+- pandas
+- NumPy
+- scikit-learn
+- NetworkX
+- Streamlit
+
+The system does not require live Bitcoin network access for its core analysis.
+
+This is useful for controlled environments where datasets are supplied locally.
+
+---
+
+# 28. Security and Privacy Considerations
+
+The prototype is designed around synthetic transaction data.
+
+It does not require real seized transaction information or live intercepted network traffic.
+
+Private and reserved IP addresses are preserved appropriately and are not treated as real public geographic identities.
+
+The system should be used as an **analytical decision-support tool**, not as an automated mechanism for declaring an entity criminal.
+
+---
+
+# 29. Limitations
+
+The current ML methodology has several limitations.
+
+### Synthetic Data
+
+The development dataset is synthetic and may not capture every pattern present in real-world Bitcoin transaction traffic.
+
+### Unsupervised Detection
+
+Isolation Forest detects unusual behavior, but unusual behavior does not necessarily mean malicious behavior.
+
+### Risk Score
+
+The risk score is a weighted analytical score rather than a legally meaningful probability of wrongdoing.
+
+### Confidence
+
+The confidence indicator is a heuristic evidence-strength measure and is not a calibrated probability.
+
+### Clustering
+
+DBSCAN groups behavioral patterns but does not inherently identify criminal or malicious groups.
+
+### Geo-IP
+
+Geo-IP and ASN information can have limitations and should be interpreted as supporting evidence.
+
+### No Live Monitoring
+
+The current prototype analyzes imported datasets rather than continuously streaming live Bitcoin network traffic.
+
+---
+
+# 30. Future Improvements
+
+Future versions could include:
+
+- Real-time transaction ingestion
+- Streaming anomaly detection
+- Additional supervised ML models
+- Deep learning-based anomaly detection
+- Graph neural networks
+- Advanced temporal modeling
+- Automated alert notifications
+- More sophisticated behavioral fingerprints
+- Real-time Geo-IP enrichment
+- Larger and more diverse datasets
+- Calibrated probability estimates
+- Analyst feedback and model retraining
+- Advanced graph community detection
+- Integration with mission or investigation monitoring systems
+
+---
+
+# 31. Summary
+
+The machine learning methodology combines several complementary techniques rather than relying on a single model.
+
+The main components are:
+
+```text
+Isolation Forest
+      +
+Wallet/IP Behavioral Analysis
+      +
+Graph Analytics
+      +
+DBSCAN Clustering
+      +
+Weighted Risk Scoring
+      +
+Explainability
+      =
+Prioritized Investigation Alerts
+```
+
+The system therefore provides an end-to-end workflow for identifying unusual Bitcoin transaction behavior, connecting related entities, ranking investigation priorities, and explaining the signals behind those rankings.
+
+The output should be interpreted as **investigation-support information**, not as definitive evidence of criminal activity.
